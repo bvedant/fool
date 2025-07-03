@@ -153,6 +153,36 @@ func genCommitID(ts, msg string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))[:8]
 }
 
+func cmdLog() {
+	logPath := ".fool/log"
+	data, err := os.ReadFile(logPath)
+	if err != nil || len(data) == 0 {
+		fmt.Println("No commits yet.")
+		return
+	}
+	entries := splitLogEntries(string(data))
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i] != "" {
+			fmt.Println(entries[i])
+		}
+	}
+}
+
+func splitLogEntries(s string) []string {
+	var entries []string
+	start := 0
+	for i := 0; i < len(s)-1; i++ {
+		if s[i] == '\n' && s[i+1] == '\n' {
+			entries = append(entries, s[start:i])
+			start = i + 2
+		}
+	}
+	if start < len(s) {
+		entries = append(entries, s[start:])
+	}
+	return entries
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -167,7 +197,7 @@ func main() {
 	case "commit":
 		cmdCommit(os.Args[2:])
 	case "log":
-		fmt.Println("log: not implemented yet")
+		cmdLog()
 	case "status":
 		fmt.Println("status: not implemented yet")
 	default:
