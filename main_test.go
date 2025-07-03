@@ -84,6 +84,64 @@ func TestAdd(t *testing.T) {
 	}
 }
 
+func TestAddMultipleFiles(t *testing.T) {
+	env := setupFoolTestEnv(t)
+	defer os.RemoveAll(env.tmpDir)
+	_, err := env.run("init")
+	if err != nil {
+		t.Fatalf("init failed")
+	}
+	// Create test files
+	file1 := filepath.Join(env.tmpDir, "foo1.txt")
+	file2 := filepath.Join(env.tmpDir, "foo2.txt")
+	file3 := filepath.Join(env.tmpDir, "foo3.txt")
+	os.WriteFile(file1, []byte("one"), 0644)
+	os.WriteFile(file2, []byte("two"), 0644)
+	os.WriteFile(file3, []byte("three"), 0644)
+	// Add multiple files at once
+	out, err := env.run("add", "foo1.txt", "foo2.txt", "foo3.txt")
+	if err != nil {
+		t.Fatalf("add failed: %v, output: %s", err, out)
+	}
+	// Debug: print output and directory contents
+	t.Logf("add output: %s", out)
+	files, _ := os.ReadDir(env.tmpDir)
+	var fnames []string
+	for _, f := range files {
+		fnames = append(fnames, f.Name())
+	}
+	t.Logf("temp dir files: %v", fnames)
+	indexPath := filepath.Join(env.tmpDir, ".fool", "index")
+	indexData, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("failed to read index: %v", err)
+	}
+	t.Logf("index contents:\n%s", string(indexData))
+	if !strings.Contains(out, "Added 'foo1.txt") || !strings.Contains(out, "Added 'foo2.txt") || !strings.Contains(out, "Added 'foo3.txt") {
+		t.Errorf("not all files reported as added: %s", out)
+	}
+	for _, fname := range []string{"foo1.txt", "foo2.txt", "foo3.txt"} {
+		if !strings.Contains(string(indexData), fname) {
+			t.Errorf("index does not contain staged file %s", fname)
+		}
+	}
+	// Add one file again, should not duplicate
+	out, err = env.run("add", "foo1.txt")
+	if err != nil {
+		t.Fatalf("add failed: %v, output: %s", err, out)
+	}
+	if !strings.Contains(out, "already staged") {
+		t.Errorf("should report already staged: %s", out)
+	}
+	indexData2, err := os.ReadFile(filepath.Join(env.tmpDir, ".fool", "index"))
+	if err != nil {
+		t.Fatalf("failed to read index: %v", err)
+	}
+	if strings.Count(string(indexData2), "foo1.txt") > 1 {
+		t.Errorf("file staged more than once")
+	}
+}
+
 func TestCommitAndLog(t *testing.T) {
 	env := setupFoolTestEnv(t)
 	defer os.RemoveAll(env.tmpDir)

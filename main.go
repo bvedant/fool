@@ -40,7 +40,7 @@ func printCommandHelp(cmd string) {
 	case "init":
 		fmt.Println("Usage: fool init\n  Initialize a new repository.")
 	case "add":
-		fmt.Println("Usage: fool add <file>\n  Add a file to the staging area.")
+		fmt.Println("Usage: fool add <file> [<file> ...]\n  Add a file to the staging area.")
 	case "commit":
 		fmt.Println("Usage: fool commit -m <message>\n  Commit staged files with a message.")
 	case "log":
@@ -83,39 +83,62 @@ func cmdInit() {
 func cmdAdd(args []string) {
 	ensureRepo()
 	if len(args) < 1 {
-		fmt.Println("Usage: fool add <file>")
-		return
-	}
-	file := args[0]
-	if _, err := os.Stat(file); err != nil {
-		fmt.Printf("File '%s' does not exist.\n", file)
+		fmt.Println("Usage: fool add <file> [<file> ...]")
 		return
 	}
 	indexPath := ".fool/index"
 	var staged []string
+	stagedMap := map[string]bool{}
 	if data, err := os.ReadFile(indexPath); err == nil {
 		lines := string(data)
 		for _, line := range splitLines(lines) {
-			if line == file {
-				fmt.Printf("File '%s' is already staged.\n", file)
-				return
-			}
 			if line != "" {
 				staged = append(staged, line)
+				stagedMap[line] = true
 			}
 		}
 	}
-	staged = append(staged, file)
+	addedAny := false
+	for _, file := range args {
+		if _, err := os.Stat(file); err != nil {
+			fmt.Printf("File '%s' does not exist.\n", file)
+			continue
+		}
+		if stagedMap[file] {
+			fmt.Printf("File '%s' is already staged.\n", file)
+			continue
+		}
+		staged = append(staged, file)
+		stagedMap[file] = true
+		fmt.Printf("Added '%s' to staging area.\n", file)
+		addedAny = true
+	}
+	// Deduplicate staged list before writing
+	unique := map[string]struct{}{}
+	var deduped []string
+	for _, s := range staged {
+		if s == "" {
+			continue
+		}
+		if _, ok := unique[s]; !ok {
+			unique[s] = struct{}{}
+			deduped = append(deduped, s)
+		}
+	}
 	f, err := os.OpenFile(indexPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Println("Error updating index:", err)
 		return
 	}
-	defer f.Close()
-	for _, s := range staged {
+	for _, s := range deduped {
 		fmt.Fprintln(f, s)
 	}
-	fmt.Printf("Added '%s' to staging area.\n", file)
+	if err := f.Close(); err != nil {
+		fmt.Println("Error closing index file:", err)
+	}
+	if !addedAny {
+		fmt.Println("No new files were added to the staging area.")
+	}
 }
 
 func splitLines(s string) []string {
