@@ -183,6 +183,79 @@ func splitLogEntries(s string) []string {
 	return entries
 }
 
+func cmdStatus() {
+	// List staged files
+	indexPath := ".fool/index"
+	staged := map[string]bool{}
+	if data, err := os.ReadFile(indexPath); err == nil && len(data) > 0 {
+		for _, f := range splitLines(string(data)) {
+			if f != "" {
+				staged[f] = true
+			}
+		}
+	}
+	if len(staged) > 0 {
+		fmt.Println("Staged files:")
+		for f := range staged {
+			fmt.Println("  ", f)
+		}
+	} else {
+		fmt.Println("No files staged for commit.")
+	}
+
+	// List untracked files (in project root, not staged, not in last commit)
+	files, _ := os.ReadDir(".")
+	lastCommitFiles := getLastCommitFiles()
+	untracked := []string{}
+	for _, file := range files {
+		name := file.Name()
+		if file.IsDir() || name == ".fool" || name == ".git" {
+			continue
+		}
+		if !staged[name] && !lastCommitFiles[name] {
+			untracked = append(untracked, name)
+		}
+	}
+	if len(untracked) > 0 {
+		fmt.Println("Untracked files:")
+		for _, f := range untracked {
+			fmt.Println("  ", f)
+		}
+	}
+}
+
+func getLastCommitFiles() map[string]bool {
+	logPath := ".fool/log"
+	data, err := os.ReadFile(logPath)
+	if err != nil || len(data) == 0 {
+		return map[string]bool{}
+	}
+	entries := splitLogEntries(string(data))
+	if len(entries) == 0 {
+		return map[string]bool{}
+	}
+	last := entries[len(entries)-1]
+	files := map[string]bool{}
+	for _, line := range splitLines(last) {
+		if len(line) > 7 && line[:7] == "Files: " {
+			// crude parse: Files: [a b c]
+			var fname string
+			for _, v := range line[7:] {
+				if v != '[' && v != ']' && v != ' ' && v != ',' {
+					fname += string(v)
+				} else if fname != "" {
+					files[fname] = true
+					fname = ""
+				}
+			}
+			if fname != "" {
+				files[fname] = true
+			}
+		}
+	}
+	return files
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -199,7 +272,7 @@ func main() {
 	case "log":
 		cmdLog()
 	case "status":
-		fmt.Println("status: not implemented yet")
+		cmdStatus()
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
 		printUsage()
