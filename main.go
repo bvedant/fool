@@ -1,8 +1,13 @@
 package main
 
 import (
+	"crypto/sha1"
+	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"time"
 )
 
 func printUsage() {
@@ -81,6 +86,73 @@ func splitLines(s string) []string {
 	return lines
 }
 
+func cmdCommit(args []string) {
+	fs := flag.NewFlagSet("commit", flag.ExitOnError)
+	msg := fs.String("m", "", "commit message")
+	fs.Parse(args)
+	if *msg == "" {
+		fmt.Println("Usage: fool commit -m <message>")
+		return
+	}
+	indexPath := ".fool/index"
+	data, err := os.ReadFile(indexPath)
+	if err != nil || len(data) == 0 {
+		fmt.Println("Nothing to commit. Staging area is empty.")
+		return
+	}
+	files := splitLines(string(data))
+	commitTime := time.Now().UTC().Format(time.RFC3339)
+	commitID := genCommitID(commitTime, *msg)
+	commitDir := filepath.Join(".fool", "objects", commitID)
+	if err := os.MkdirAll(commitDir, 0755); err != nil {
+		fmt.Println("Error creating commit directory:", err)
+		return
+	}
+	var committedFiles []string
+	for _, file := range files {
+		if file == "" {
+			continue
+		}
+		in, err := os.Open(file)
+		if err != nil {
+			fmt.Printf("Warning: could not open '%s', skipping.\n", file)
+			continue
+		}
+		outPath := filepath.Join(commitDir, file)
+		os.MkdirAll(filepath.Dir(outPath), 0755)
+		out, err := os.Create(outPath)
+		if err != nil {
+			fmt.Printf("Warning: could not write '%s', skipping.\n", file)
+			in.Close()
+			continue
+		}
+		io.Copy(out, in)
+		in.Close()
+		out.Close()
+		committedFiles = append(committedFiles, file)
+	}
+	if len(committedFiles) == 0 {
+		fmt.Println("No files were committed.")
+		return
+	}
+	meta := fmt.Sprintf("commit: %s\ndate: %s\nmessage: %s\nfiles: %v\n", commitID, commitTime, *msg, committedFiles)
+	os.WriteFile(filepath.Join(commitDir, "meta.txt"), []byte(meta), 0644)
+	// Append to log
+	logEntry := fmt.Sprintf("commit %s\nDate: %s\nMessage: %s\nFiles: %v\n\n", commitID, commitTime, *msg, committedFiles)
+	f, _ := os.OpenFile(".fool/log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f.WriteString(logEntry)
+	f.Close()
+	// Clear index
+	os.WriteFile(indexPath, []byte{}, 0644)
+	fmt.Printf("Committed %d file(s) with id %s\n", len(committedFiles), commitID)
+}
+
+func genCommitID(ts, msg string) string {
+	h := sha1.New()
+	h.Write([]byte(ts + msg))
+	return fmt.Sprintf("%x", h.Sum(nil))[:8]
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -93,7 +165,7 @@ func main() {
 	case "add":
 		cmdAdd(os.Args[2:])
 	case "commit":
-		fmt.Println("commit: not implemented yet")
+		cmdCommit(os.Args[2:])
 	case "log":
 		fmt.Println("log: not implemented yet")
 	case "status":
