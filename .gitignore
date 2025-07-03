@@ -36,5 +36,6 @@ go.work.sum
 .DS_Store
 
 .fool/
-test.txt
+testrepo/
+*.txt
 *.tmp
