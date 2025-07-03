@@ -10,14 +10,51 @@ import (
 	"time"
 )
 
+const foolVersion = "0.1.0"
+
 func printUsage() {
 	fmt.Println("fool - a minimal version control system")
 	fmt.Println("Usage:")
-	fmt.Println("  fool init")
-	fmt.Println("  fool add <file>")
-	fmt.Println("  fool commit -m <message>")
-	fmt.Println("  fool log")
-	fmt.Println("  fool status")
+	fmt.Println("  fool <command> [options]")
+	fmt.Println("Commands:")
+	fmt.Println("  init         Initialize a new repository")
+	fmt.Println("  add <file>   Add a file to the staging area")
+	fmt.Println("  commit -m <message>  Commit staged files with a message")
+	fmt.Println("  log          Show commit history")
+	fmt.Println("  status       Show the status of the working directory")
+	fmt.Println("  help [cmd]   Show help for a command")
+	fmt.Println("  version      Show fool version")
+}
+
+func printCommandHelp(cmd string) {
+	switch cmd {
+	case "init":
+		fmt.Println("Usage: fool init\n  Initialize a new repository.")
+	case "add":
+		fmt.Println("Usage: fool add <file>\n  Add a file to the staging area.")
+	case "commit":
+		fmt.Println("Usage: fool commit -m <message>\n  Commit staged files with a message.")
+	case "log":
+		fmt.Println("Usage: fool log\n  Show commit history.")
+	case "status":
+		fmt.Println("Usage: fool status\n  Show the status of the working directory.")
+	case "version":
+		fmt.Println("Usage: fool version\n  Show fool version.")
+	default:
+		printUsage()
+	}
+}
+
+func cmdHelp(args []string) {
+	if len(args) > 0 {
+		printCommandHelp(args[0])
+	} else {
+		printUsage()
+	}
+}
+
+func cmdVersion() {
+	fmt.Printf("fool version %s\n", foolVersion)
 }
 
 func cmdInit() {
@@ -262,19 +299,56 @@ func main() {
 		return
 	}
 
-	switch os.Args[1] {
+	cmd := os.Args[1]
+	args := os.Args[2:]
+
+	// Global help/version
+	if cmd == "--help" || cmd == "-h" {
+		printUsage()
+		return
+	}
+	if cmd == "version" {
+		cmdVersion()
+		return
+	}
+	if cmd == "help" {
+		cmdHelp(args)
+		return
+	}
+
+	switch cmd {
 	case "init":
+		if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+			printCommandHelp("init")
+			return
+		}
 		cmdInit()
 	case "add":
-		cmdAdd(os.Args[2:])
+		if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+			printCommandHelp("add")
+			return
+		}
+		cmdAdd(args)
 	case "commit":
-		cmdCommit(os.Args[2:])
+		if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+			printCommandHelp("commit")
+			return
+		}
+		cmdCommit(args)
 	case "log":
+		if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+			printCommandHelp("log")
+			return
+		}
 		cmdLog()
 	case "status":
+		if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+			printCommandHelp("status")
+			return
+		}
 		cmdStatus()
 	default:
-		fmt.Printf("Unknown command: %s\n", os.Args[1])
+		fmt.Printf("Unknown command: %s\n", cmd)
 		printUsage()
 	}
 }
