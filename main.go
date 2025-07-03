@@ -1,16 +1,25 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha1"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
-const foolVersion = "0.1.0"
+const foolVersion = "0.1.1"
+
+func ensureRepo() {
+	if _, err := os.Stat(".fool"); os.IsNotExist(err) {
+		fmt.Println("Error: not a fool repository (run 'fool init' first)")
+		os.Exit(1)
+	}
+}
 
 func printUsage() {
 	fmt.Println("fool - a minimal version control system")
@@ -72,6 +81,7 @@ func cmdInit() {
 }
 
 func cmdAdd(args []string) {
+	ensureRepo()
 	if len(args) < 1 {
 		fmt.Println("Usage: fool add <file>")
 		return
@@ -109,21 +119,16 @@ func cmdAdd(args []string) {
 }
 
 func splitLines(s string) []string {
+	scanner := bufio.NewScanner(strings.NewReader(s))
 	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
 	}
 	return lines
 }
 
 func cmdCommit(args []string) {
+	ensureRepo()
 	fs := flag.NewFlagSet("commit", flag.ExitOnError)
 	msg := fs.String("m", "", "commit message")
 	fs.Parse(args)
@@ -155,17 +160,24 @@ func cmdCommit(args []string) {
 			fmt.Printf("Warning: could not open '%s', skipping.\n", file)
 			continue
 		}
+		defer in.Close()
 		outPath := filepath.Join(commitDir, file)
-		os.MkdirAll(filepath.Dir(outPath), 0755)
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			fmt.Printf("Warning: could not create directory for '%s', skipping.\n", file)
+			in.Close()
+			continue
+		}
 		out, err := os.Create(outPath)
 		if err != nil {
 			fmt.Printf("Warning: could not write '%s', skipping.\n", file)
 			in.Close()
 			continue
 		}
-		io.Copy(out, in)
-		in.Close()
-		out.Close()
+		defer out.Close()
+		if _, err := io.Copy(out, in); err != nil {
+			fmt.Printf("Warning: could not copy '%s', skipping.\n", file)
+			continue
+		}
 		committedFiles = append(committedFiles, file)
 	}
 	if len(committedFiles) == 0 {
@@ -173,14 +185,27 @@ func cmdCommit(args []string) {
 		return
 	}
 	meta := fmt.Sprintf("commit: %s\ndate: %s\nmessage: %s\nfiles: %v\n", commitID, commitTime, *msg, committedFiles)
-	os.WriteFile(filepath.Join(commitDir, "meta.txt"), []byte(meta), 0644)
+	if err := os.WriteFile(filepath.Join(commitDir, "meta.txt"), []byte(meta), 0644); err != nil {
+		fmt.Println("Error writing commit metadata:", err)
+		return
+	}
 	// Append to log
 	logEntry := fmt.Sprintf("commit %s\nDate: %s\nMessage: %s\nFiles: %v\n\n", commitID, commitTime, *msg, committedFiles)
-	f, _ := os.OpenFile(".fool/log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	f.WriteString(logEntry)
-	f.Close()
+	f, err := os.OpenFile(".fool/log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Error writing to log:", err)
+		return
+	}
+	defer f.Close()
+	if _, err := f.WriteString(logEntry); err != nil {
+		fmt.Println("Error writing log entry:", err)
+		return
+	}
 	// Clear index
-	os.WriteFile(indexPath, []byte{}, 0644)
+	if err := os.WriteFile(indexPath, []byte{}, 0644); err != nil {
+		fmt.Println("Error clearing index:", err)
+		return
+	}
 	fmt.Printf("Committed %d file(s) with id %s\n", len(committedFiles), commitID)
 }
 
@@ -191,6 +216,7 @@ func genCommitID(ts, msg string) string {
 }
 
 func cmdLog() {
+	ensureRepo()
 	logPath := ".fool/log"
 	data, err := os.ReadFile(logPath)
 	if err != nil || len(data) == 0 {
@@ -221,6 +247,7 @@ func splitLogEntries(s string) []string {
 }
 
 func cmdStatus() {
+	ensureRepo()
 	// List staged files
 	indexPath := ".fool/index"
 	staged := map[string]bool{}
