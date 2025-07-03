@@ -242,7 +242,7 @@ func cmdStatus() {
 
 	// List untracked files (in project root, not staged, not in last commit)
 	files, _ := os.ReadDir(".")
-	lastCommitFiles := getLastCommitFiles()
+	lastCommitFiles, lastCommitID := getLastCommitFilesAndID()
 	untracked := []string{}
 	for _, file := range files {
 		name := file.Name()
@@ -259,23 +259,42 @@ func cmdStatus() {
 			fmt.Println("  ", f)
 		}
 	}
+
+	// Show modified files (in last commit, not staged, and contents differ)
+	modified := []string{}
+	for f := range lastCommitFiles {
+		if staged[f] {
+			continue // staged files already shown
+		}
+		wdData, err1 := os.ReadFile(f)
+		commitData, err2 := os.ReadFile(filepath.Join(".fool", "objects", lastCommitID, f))
+		if err1 == nil && err2 == nil && string(wdData) != string(commitData) {
+			modified = append(modified, f)
+		}
+	}
+	if len(modified) > 0 {
+		fmt.Println("Modified files:")
+		for _, f := range modified {
+			fmt.Println("  ", f)
+		}
+	}
 }
 
-func getLastCommitFiles() map[string]bool {
+func getLastCommitFilesAndID() (map[string]bool, string) {
 	logPath := ".fool/log"
 	data, err := os.ReadFile(logPath)
 	if err != nil || len(data) == 0 {
-		return map[string]bool{}
+		return map[string]bool{}, ""
 	}
 	entries := splitLogEntries(string(data))
 	if len(entries) == 0 {
-		return map[string]bool{}
+		return map[string]bool{}, ""
 	}
 	last := entries[len(entries)-1]
 	files := map[string]bool{}
+	var commitID string
 	for _, line := range splitLines(last) {
 		if len(line) > 7 && line[:7] == "Files: " {
-			// crude parse: Files: [a b c]
 			var fname string
 			for _, v := range line[7:] {
 				if v != '[' && v != ']' && v != ' ' && v != ',' {
@@ -289,8 +308,11 @@ func getLastCommitFiles() map[string]bool {
 				files[fname] = true
 			}
 		}
+		if len(line) > 7 && line[:7] == "commit " {
+			commitID = line[7:]
+		}
 	}
-	return files
+	return files, commitID
 }
 
 func main() {
